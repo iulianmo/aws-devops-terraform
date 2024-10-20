@@ -1,0 +1,54 @@
+---
+version: 0.2
+
+env:
+  variables:
+    GITHUB_REPO: https://github.com/devopsdemo/devops-demo-app.git
+    DOCKER_IMAGE_NAME: devopsdemo
+  secrets-manager:
+    DOCKER_USER: ${DOCKER_CREDENTIALS_SECRET_NAME}:docker_user
+    DOCKER_PASSWORD: ${DOCKER_CREDENTIALS_SECRET_NAME}:docker_password
+    
+phases:
+  install:
+    on-failure: ABORT
+    commands:
+      - aws --version
+      - git -v
+      - docker -v
+      - docker login -u $DOCKER_USER -p $DOCKER_PASSWORD
+      - git clone $GITHUB_REPO
+      - cd devops-demo-app
+
+  pre_build:
+    on-failure: ABORT
+    commands:
+      - echo Test started on `date`
+      - ./gradlew test
+      - echo Test completed on `date`
+
+  build:
+    on-failure: ABORT
+    commands:
+      - echo Build started on `date`
+      - ./gradlew bootBuildImage
+      - docker images
+      - echo Build completed on `date`
+
+  post_build:
+    on-failure: ABORT
+    finally: echo Completed on `date`
+    commands:
+      - echo Pushing Docker image to Docker Hub...
+      - DOCKER_IMAGE_LOCAL=$(docker images --format "{{.Repository}}:{{.Tag}}" ${DOCKER_IMAGE_NAME})
+      - DOCKER_IMAGE_URI=docker.io/$DOCKER_USER/$DOCKER_IMAGE_NAME:latest
+      - echo Docker image $DOCKER_IMAGE_LOCAL
+      - docker tag $DOCKER_IMAGE_LOCAL $DOCKER_IMAGE_URI
+      - docker push $DOCKER_IMAGE_URI
+      - echo Docker image pushed on `date`
+      - printf '[{"name":"%s","imageUri":"%s"}]' devopsdemo $DOCKER_IMAGE_URI > ../imagedefinitions.json
+      - cat ../imagedefinitions.json
+
+artifacts:
+  files:
+    - imagedefinitions.json
